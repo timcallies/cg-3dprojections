@@ -33,6 +33,7 @@ function Mat4x4Projection(mat4x4, prp, srp, vup, clip) {
     let u_axis = vup.cross(n_axis);
     u_axis.normalize();
     let v_axis = n_axis.cross(u_axis);
+    
 
     // 1. translate PRP to origin
     let t_per = new Matrix(4,4);

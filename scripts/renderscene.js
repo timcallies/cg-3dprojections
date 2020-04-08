@@ -4,11 +4,20 @@ var scene;
 var start_time;
 var camera_velocity;
 var keys_pressed;
+var prev_time;
+
+var delta_u = 0.0005;
+var max_u = delta_u*100;
+var delta_n = 0.0005;
+var max_n = delta_n*100;
+var delta_rot = 0.000025;
+var max_rot = delta_rot*100;
 
 // Initialization function - called when web page loads
 function Init() {
     var w = 800;
     var h = 600;
+    camera_velocity = {u:0, n:0, rot:0};
     view = document.getElementById('view');
     view.width = w;
     view.height = h;
@@ -20,7 +29,7 @@ function Init() {
     scene = {
         view: {
             type: 'perspective',
-            prp: Vector3(10, 9, 0),
+            prp: Vector3(10, 15, 0),
             srp: Vector3(10, 9, -30),
             vup: Vector3(0, 1, 0),
             clip: [-11, 11, -11, 11, 30, 100]
@@ -30,7 +39,7 @@ function Init() {
                 type: 'generic',
                 animation: {
                     axis: 'y',
-                    rps: 0.1
+                    rps: 0
                 },
                 vertices: [
                     Vector4( 0,  0, -30, 1),
@@ -67,23 +76,119 @@ function Init() {
     
     // start animation loop
     start_time = performance.now(); // current timestamp in milliseconds
+    prev_time = start_time;
     window.requestAnimationFrame(Animate);
 }
 
 // Animation loop - repeatedly calls rendering code
 function Animate(timestamp) {
     var time = timestamp - start_time;
+    var delta_time = time - prev_time;
+    prev_time = time;
 
-    // Apply the changes to the camera
-    let n_axis = scene.view.prp.subtract(scene.view.srp);
+    // Left arrow
+    if(keys_pressed[37]) {
+        camera_velocity.u = Math.max(camera_velocity.u - delta_u*delta_time, -max_u);
+    }
+
+    // Up arrow
+    if(keys_pressed[38]) {
+        camera_velocity.n = Math.max(camera_velocity.n - delta_n*delta_time, -max_n);
+    }
+
+    // Right arrow
+    if(keys_pressed[39]) {
+        camera_velocity.u = Math.min(camera_velocity.u + delta_u*delta_time, max_u);
+    }
+
+    // Down arrow
+    if(keys_pressed[40]) {
+        camera_velocity.n = Math.min(camera_velocity.n + delta_n*delta_time, max_n);
+    }
+    
+    // Period
+    if(keys_pressed[190]) {
+        camera_velocity.rot = Math.max(camera_velocity.rot - delta_rot*delta_time, -max_rot);
+    }
+
+    // Comma
+    if(keys_pressed[188]) {
+        camera_velocity.rot = Math.min(camera_velocity.rot + delta_rot*delta_time, max_rot);
+    }
+
+    // Reduce velocity - U
+    if(!(keys_pressed[37] || keys_pressed[39])) {
+        if(camera_velocity.u < 0) {
+            camera_velocity.u = Math.min(camera_velocity.u + delta_u*delta_time,0)
+        }
+        if(camera_velocity.u > 0) {
+            camera_velocity.u = Math.max(camera_velocity.u - delta_u*delta_time,0)
+        }
+    }
+
+    // Reduce velocity - N
+    if(!(keys_pressed[38] || keys_pressed[40])) {
+        if(camera_velocity.n < 0) {
+            camera_velocity.n = Math.min(camera_velocity.n + delta_n*delta_time,0)
+        }
+        if(camera_velocity.n > 0) {
+            camera_velocity.n = Math.max(camera_velocity.n - delta_n*delta_time,0)
+        }
+    }
+
+    // Reduce velocity - Rot
+    if(!(keys_pressed[188] || keys_pressed[190])) {
+        if(camera_velocity.rot < 0) {
+            camera_velocity.rot = Math.min(camera_velocity.rot + delta_rot*delta_time,0)
+        }
+        if(camera_velocity.rot > 0) {
+            camera_velocity.rot = Math.max(camera_velocity.rot - delta_rot*delta_time,0)
+        }
+    }
+
+    var n_axis = scene.view.prp.subtract(scene.view.srp);
     n_axis.normalize();
-    let u_axis = scene.view.vup.cross(n_axis);
+    var u_axis = scene.view.vup.cross(n_axis);
     u_axis.normalize();
 
-    
-    if(!(keys_pressed[37] && keys_pressed[39])) {
-        // Left arrow
-    }
+    n_axis.scale(delta_time*camera_velocity.n);
+    scene.view.prp = scene.view.prp.add(n_axis);
+    scene.view.srp = scene.view.srp.add(n_axis);
+
+    u_axis.scale(delta_time*camera_velocity.u);
+    scene.view.prp = scene.view.prp.add(u_axis);
+    scene.view.srp = scene.view.srp.add(u_axis);
+
+    // Rotate the camera
+    n_axis = scene.view.prp.subtract(scene.view.srp);
+    n_axis.normalize();
+    u_axis = scene.view.vup.cross(n_axis);
+    u_axis.normalize();
+    let v_axis = n_axis.cross(u_axis);
+
+    let cam_translate = new Matrix(4,4);
+    let cam_rotate_forward = new Matrix(4,4);
+    let cam_rotate = new Matrix(4,4);
+    let cam_rotate_back = new Matrix(4,4);
+    let cam_translate_back = new Matrix(4,4);
+    Mat4x4Translate(cam_translate, -scene.view.prp.x, -scene.view.prp.y, -scene.view.prp.z);
+    cam_rotate_forward.values = [
+        [u_axis.x, u_axis.y, u_axis.z, 0],
+        [v_axis.x, v_axis.y, v_axis.z, 0],
+        [n_axis.x, n_axis.y, n_axis.z, 0],
+        [0,0,0,1]
+    ];
+    Mat4x4RotateY(cam_rotate, camera_velocity.rot * delta_time);
+    cam_rotate_back.values = [
+        [u_axis.x, u_axis.y, -u_axis.z, 0],
+        [v_axis.x, v_axis.y, v_axis.z, 0],
+        [-n_axis.x, n_axis.y, n_axis.z, 0],
+        [0,0,0,1]
+    ];
+    Mat4x4Translate(cam_translate_back, scene.view.prp.x, scene.view.prp.y, scene.view.prp.z);
+    let old_val = scene.view.srp;
+    let new_val = Matrix.multiply([cam_translate_back, cam_rotate_back, cam_rotate, cam_rotate_forward, cam_translate, new Vector4(old_val.x,old_val.y,old_val.z,1)]);
+    //scene.view.srp = new Vector3(new_val.x, new_val.y, new_val.z);
 
     for(let model of scene.models) {
 
@@ -282,37 +387,6 @@ function LoadNewScene() {
         }
     };
     reader.readAsText(scene_file.files[0], "UTF-8");
-}
-
-// Called when user presses a key on the keyboard down 
-function updateVelocity() {
-
-
-
-    switch (event.keyCode) {
-
-        case 37: // LEFT Arrow
-            console.log("left");
-            scene.view.prp = scene.view.prp.subtract(u_axis);
-            scene.view.srp = scene.view.srp.subtract(u_axis);
-            break;
-        case 38: // UP Arrow
-            console.log("up");
-            scene.view.prp = scene.view.prp.subtract(n_axis);
-            scene.view.srp = scene.view.srp.subtract(n_axis);
-            break;
-        case 39: // RIGHT Arrow
-            console.log("right");
-            scene.view.prp = scene.view.prp.add(u_axis);
-            scene.view.srp = scene.view.srp.add(u_axis);
-            console.log(scene.view.srp);
-            break;
-        case 40: // DOWN Arrow
-            console.log("down");
-            scene.view.prp = scene.view.prp.add(n_axis);
-            scene.view.srp = scene.view.srp.add(n_axis);
-            break;
-    }
 }
 
 // Draw black 2D line with red endpoints 
