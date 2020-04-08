@@ -11,26 +11,70 @@ function Mat4x4Parallel(mat4x4, prp, srp, vup, clip) {
     // mat4x4.values = transform.values;
 }
 
-// set values of mat4x4 to the parallel projection / view matrix
+// set values of mat4x4 to the perspective projection / view matrix
 function Mat4x4Projection(mat4x4, prp, srp, vup, clip) {
-    // 1. translate PRP to origin
-    // 2. rotate VRC such that (u,v,n) align with (x,y,z)
-    // 3. shear such that CW is on the z-axis
-    // 4. scale such that view volume bounds are ([z,-z], [z,-z], [-1,zmin])
+    let clip_val = {
+        left: clip[0],
+        right: clip[1],
+        bottom: clip[2],
+        top: clip[3],
+        near: clip[4],
+        far: clip[5]
+    };
 
-    // ...
-    // var transform = Matrix.multiply([...]);
-    // mat4x4.values = transform.values;
+    let cw = new Vector3((clip_val.left+clip_val.right)/2, (clip_val.top+clip_val.bottom)/2, -clip_val.near);
+
+    let dop = cw;
+
+    //VR PRP = cw - origin
+
+    let n_axis = prp.subtract(srp);
+    n_axis.normalize();
+    let u_axis = vup.cross(n_axis);
+    u_axis.normalize();
+    let v_axis = n_axis.cross(u_axis);
+
+    // 1. translate PRP to origin
+    let t_per = new Matrix(4,4);
+    Mat4x4Translate(t_per, -prp.x, -prp.y, -prp.z);
+
+    // 2. rotate VRC such that (u,v,n) align with (x,y,z)
+    let r_per = new Matrix(4,4);
+    r_per.values = [
+        [u_axis.x, u_axis.y, u_axis.z, 0],
+        [v_axis.x, v_axis.y, v_axis.z, 0],
+        [n_axis.x, n_axis.y, n_axis.z, 0],
+        [0,0,0,1]
+    ];
+
+    // 3. shear such that CW is on the z-axis
+    let sh_per = new Matrix(4,4);
+    Mat4x4ShearXY(sh_per, (-dop.x)/dop.z, (-dop.y)/dop.z);
+    //Mat4x4Identity(sh_per);
+
+    // 4. scale such that view volume bounds are ([z,-z], [z,-z], [-1,zmin])
+    let s_per = new Matrix(4,4);
+    Mat4x4Scale(s_per,
+        (2*clip_val.near)/((clip_val.right-clip_val.left)*clip_val.far),
+        (2*clip_val.near)/((clip_val.top-clip_val.bottom)*clip_val.far),
+        1/clip_val.far
+    );
+
+    var transform = Matrix.multiply([s_per,sh_per,r_per,t_per]);
+    mat4x4.values = transform.values;
 }
 
 // set values of mat4x4 to project a parallel image on the z=0 plane
 function Mat4x4MPar(mat4x4) {
-    // mat4x4.values = ...;
+    //mat4x4.values = ...;
 }
 
 // set values of mat4x4 to project a perspective image on the z=-1 plane
 function Mat4x4MPer(mat4x4) {
-    // mat4x4.values = ...;
+    mat4x4.values = [[1, 0, 0, 0],
+                     [0, 1, 0, 0],
+                     [0, 0, 1, 0],
+                     [0, 0, -1, 0]];
 }
 
 
