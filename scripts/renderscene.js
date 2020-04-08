@@ -5,6 +5,13 @@ var start_time;
 var camera_velocity;
 var keys_pressed;
 
+var BACK =   1;  //000001
+var FRONT =  2;  //000010
+var TOP =    4;  //000100
+var BOTTOM = 8;  //001000
+var RIGHT =  16; //010000
+var LEFT =   32; //100000
+
 // Initialization function - called when web page loads
 function Init() {
     var w = 800;
@@ -213,7 +220,31 @@ function DrawScene() {
     }
 
     //Clip
-
+    for (var i = 0; i < scene.models.length; i++)
+    {
+        for (var j = 0; j < scene.models[i].edges.length; j++)
+        {
+            for (var k = 0; k < scene.models[i].edges[j].length - 1; k++)
+            {
+				var v1 = scene.models[i].vertices[scene.models[i].edges[j][k]];
+				var v2 = scene.models[i].vertices[scene.models[i].edges[j][k + 1]];
+				var line;
+				if(scene.view.type === 'parallel')
+				{
+					line = clipPar(models[i][v1], models[i][v2]);
+				}
+				else
+				{
+					line = clipPersp(models[i][v1], models[i][v2]);
+				}
+				if (line != null)
+				{
+					scene.models[i].vertices[v1] = line.pt0;
+					scene.models.[i].vertices[v2] = line.pt1;
+				}
+			}
+		}
+	}
 
     //Transform
     let project_back = new Matrix(4,4);
@@ -248,6 +279,187 @@ function DrawScene() {
             }
         }
     }
+}
+
+function outcodePar(pt)
+{
+	var outcode = 0;
+	if (pt.x - 0.00001 < -1) outcode += LEFT;
+	else if (pt.x - 0.00001 > 1) outcode += RIGHT;
+	if (pt.y - 0.00001 < -1) outcode += BOTTOM;
+	else if (pt.y - 0.00001 > 1) outcode += TOP;
+	if (pt.z > 0) outcode += NEAR;
+	else if (pt.z < -1) outcode += FAR;
+	
+	return outcode;
+}
+
+function outcodePersp(pt)
+{
+	var outcode = 0;
+	var zmin = -scene.view.clip[4]/scene.view.clip[5];
+	if(pt.x < pt.z) outcode += LEFT;
+	else if(pt.x > -pt.z) outcode += RIGHT;
+	if(pt.y < pt.z) outcode += BOTTOM;
+	else if(pt.y > -pt.z) outcode += TOP;
+	if(pt.z > zmin) outcode += NEAR;
+	else if(pt.z < -1) outcode += FAR;
+	
+	return outcode;
+}
+
+function clipPar(pt0, pt1)
+{
+	var done = false;
+	var line = null;
+	var endpt0 = new Vector4(pt0.x, pt0.y, pt0.z, pt0.w);
+	var endpt1 = new Vector4(pt1.x, pt1.y, pt1.z, pt1.w);
+	var outcode0, outcode1, selected_outcode, t;
+	
+	while(!done)
+	{
+		outcode0 = OutcodePar(endpt0);
+		outcode1 = OutcodePar(endpt1);
+		if((outcode0 | outcode1) === 0) // <---checks type and value
+		{
+			done = true;
+			line = {pt0 : endpt0, pt1 : endpt1};
+		}
+		else if((outcode0 & outcode1) !== 0)
+		{
+			done = true;
+		}
+		else
+		{
+			if(outcode0 !== 0)
+			{
+				selected_outcode = outcode0;
+			}
+			else
+			{
+				selected_outcode = outcode1;
+			}
+			
+			if (selected_outcode & LEFT)
+			{
+				t = (-1 - endpt0.x) / (endpt1.x - endpt0.x);
+			}
+			else if (selected_outcode & RIGHT)
+			{
+				t = (1 - endpt0.x) / (endpt1.x - endpt0.x);
+			}	
+			else if (selected_outcode & BOTTOM)
+			{
+				t = (-1 - endpt0.y) / (endpt1.y - endpt0.y);
+			}	
+			else if (selected_outcode & TOP)
+			{
+				t = (1 - endpt0.y) / (endpt1.y - endpt0.y);
+			}
+			else if (selected_outcode & NEAR)
+			{
+				t = (0 - endpt0.z) / (endpt1.z - endpt0.z);
+			}
+			else
+			{
+				t = (-1 - endpt0.z) / (endpt1.z - endpt0.z);
+			}
+			
+			if(selected_outcode === outcode0)
+			{
+				endpt0.x = endpt0.x + t * (endpt1.x - endpt0.x);
+				endpt0.y = endpt0.y + t * (endpt1.y - endpt0.y);
+				endpt0.z = endpt0.z + t * (endpt1.z - endpt0.z);
+			}
+			else
+			{
+				endpt1.x = endpt0.x + t * (endpt1.x - endpt0.x);
+				endpt1.y = endpt0.y + t * (endpt1.y - endpt0.y);
+				endpt1.z = endpt0.z + t * (endpt1.z - endpt0.z);
+			}
+		}
+	}
+	
+	return line;
+}
+
+function clipPersp(pt0, pt1)
+{
+	var done = false;
+	var line = null;
+	var endpt0 = new Vector4(pt0.x, pt0.y, pt0.z, pt0.w);
+	var endpt1 = new Vector4(pt1.x, pt1.y, pt1.z, pt1.w);
+	var outcode0, outcode1, selected_outcode, t;
+	
+	while(!done)
+	{
+		outcode0 = OutcodePersp(endpt0);
+		outcode1 = OutcodePersp(endpt1);
+		if((outcode0 | outcode1) === 0) // <---checks type and value
+		{
+			done = true;
+			line = {pt0 : endpt0, pt1 : endpt1};
+		}
+		else if((outcode0 & outcode1) !== 0)
+		{
+			done = true;
+		}
+		else
+		{
+			if(outcode0 !== 0)
+			{
+				selected_outcode = outcode0;
+			}
+			else
+			{
+				selected_outcode = outcode1;
+			}
+			
+			var dx = endpt1.x - endpt0.x;
+			var dy = endpt1.y - endpt0.y;
+			var dz = endpt1.z - endpt0.z;
+			var zmin = -scene.view.clip[4]/scene.view.clip[5];
+			if (selected_outcode & LEFT)
+			{
+				t = ((-endpt0.x) - endpt0.z) / (dx - dz);
+			}
+			else if (selected_outcode & RIGHT)
+			{
+				t = (endpt0.x - endpt0.z) / (-dx - dz);
+			}	
+			else if (selected_outcode & BOTTOM)
+			{
+				t = ((-endpt0.y) + endpt0.z) / (dy - dz);
+			}	
+			else if (selected_outcode & TOP)
+			{
+				t = (endpt0.y + endpt0.z) / (-dy - dz);
+			}
+			else if (selected_outcode & NEAR)
+			{
+				t = (endpt0.z - zmin) / (-dz);
+			}
+			else
+			{
+				t = ((-endpt0.z) - 1) / (dz);
+			}
+			
+			if(selected_outcode === outcode0)
+			{
+				endpt0.x = endpt0.x + t * (endpt1.x - endpt0.x);
+				endpt0.y = endpt0.y + t * (endpt1.y - endpt0.y);
+				endpt0.z = endpt0.z + t * (endpt1.z - endpt0.z);
+			}
+			else
+			{
+				endpt1.x = endpt0.x + t * (endpt1.x - endpt0.x);
+				endpt1.y = endpt0.y + t * (endpt1.y - endpt0.y);
+				endpt1.z = endpt0.z + t * (endpt1.z - endpt0.z);
+			}
+		}
+	}
+	
+	return line;
 }
 
 // Called when user selects a new scene JSON file
