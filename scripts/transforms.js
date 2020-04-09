@@ -1,6 +1,14 @@
 // set values of mat4x4 to the parallel projection / view matrix
 function Mat4x4Parallel(mat4x4, prp, srp, vup, clip) {
-	
+    let clip_val = {
+
+        left: clip[0],
+        right: clip[1],
+        bottom: clip[2],
+        top: clip[3],
+        near: clip[4],
+        far: clip[5]
+    };
 	var translate = new Matrix(4,4);
 	var rotate = new Matrix(4,4);
 	var shear = new Matrix(4,4);
@@ -24,7 +32,7 @@ function Mat4x4Parallel(mat4x4, prp, srp, vup, clip) {
 		];
 		
     // 3. shear such that CW is on the z-axis
-	var CW = new Vector3((clip[0] + clip[1]) / 2, (clip[2] + clip[3]) / 2, -(clip[4]));
+	var CW = new Vector3((clip_val.left+clip_val.right)/2, (clip_val.top+clip_val.bottom)/2, -clip_val.near);
 	var DOP = CW.subtract(prp);
 	var shx = -DOP.x / DOP.z;
 	var shy = -DOP.y / DOP.z;
@@ -37,7 +45,7 @@ function Mat4x4Parallel(mat4x4, prp, srp, vup, clip) {
     // 5. scale such that view volume bounds are ([-1,1], [-1,1], [-1,0]
 	var sx = 2 / (clip[1] - clip[0]);
 	var sy = 2 / (clip[3] - clip[2]);
-	var sz = 1 / clip[5];
+	var sz = 1 / (clip_val.far - clip_val.near);
 	Mat4x4Scale(scale, sx, sy, sz);
     // ...
     var transform = Matrix.multiply([scale, translateNear, shear, rotate, translate]);
@@ -100,7 +108,10 @@ function Mat4x4Projection(mat4x4, prp, srp, vup, clip) {
 
 // set values of mat4x4 to project a parallel image on the z=0 plane
 function Mat4x4MPar(mat4x4) {
-    //mat4x4.values = ...;
+    mat4x4.values = [[1, 0, 0, 0],
+                     [0, 1, 0, 0],
+                     [0, 0, 0, 0],
+                     [0, 0, 0, 1]];
 }
 
 // set values of mat4x4 to project a perspective image on the z=-1 plane
