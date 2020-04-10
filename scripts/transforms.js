@@ -1,7 +1,6 @@
 // set values of mat4x4 to the parallel projection / view matrix
 function Mat4x4Parallel(mat4x4, prp, srp, vup, clip) {
     let clip_val = {
-
         left: clip[0],
         right: clip[1],
         bottom: clip[2],
@@ -9,46 +8,54 @@ function Mat4x4Parallel(mat4x4, prp, srp, vup, clip) {
         near: clip[4],
         far: clip[5]
     };
-	var translate = new Matrix(4,4);
-	var rotate = new Matrix(4,4);
-	var shear = new Matrix(4,4);
-	var scale = new Matrix(4,4);
-	var translateNear = new Matrix(4,4);
-    // 1. translate PRP to origin
-	Mat4x4Translate(translate, -(prp.x), -(prp.y), -(prp.z));
-	
-    // 2. rotate VRC such that (u,v,n) align with (x,y,z)
-	var n = prp.subtract(srp);
-	n.normalize();
-	var u = vup.cross(n);
-	u.normalize();
-	var v = n.cross(u); // already normalized so we dont need to do it again.
-	rotate.values = 
-		[
-			[u.x, u.y, u.z, 0],
-			[v.x, v.y, v.z, 0],
-			[n.x, n.y, n.z, 0],
-			[0, 0, 0, 1]
-		];
-		
-    // 3. shear such that CW is on the z-axis
-	var CW = new Vector3((clip_val.left+clip_val.right)/2, (clip_val.top+clip_val.bottom)/2, -clip_val.near);
-	var DOP = CW.subtract(prp);
-	var shx = -DOP.x / DOP.z;
-	var shy = -DOP.y / DOP.z;
 
-	Mat4x4ShearXY(shear, shx, shy);
-	
+    let cw = new Vector3((clip_val.left+clip_val.right)/2, (clip_val.top+clip_val.bottom)/2, -clip_val.near);
+
+    let dop = cw;
+
+    let n_axis = prp.subtract(srp);
+    n_axis.normalize();
+    let u_axis = vup.cross(n_axis);
+    u_axis.normalize();
+    let v_axis = n_axis.cross(u_axis);
+    
+
+    // 1. translate PRP to origin
+    let t_par = new Matrix(4,4);
+    Mat4x4Translate(t_par, -prp.x, -prp.y, -prp.z);
+
+    // 2. rotate VRC such that (u,v,n) align with (x,y,z)
+    let r_par = new Matrix(4,4);
+    r_par.values = [
+        [u_axis.x, u_axis.y, u_axis.z, 0],
+        [v_axis.x, v_axis.y, v_axis.z, 0],
+        [n_axis.x, n_axis.y, n_axis.z, 0],
+        [0,0,0,1]
+    ];
+
+    // 3. shear such that CW is on the z-axis
+    let sh_par = new Matrix(4,4);
+    Mat4x4ShearXY(sh_par, (-dop.x)/dop.z, (-dop.y)/dop.z);
+    //Mat4x4Identity(sh_par)
+
     // 4. translate near clipping plane to origin
-	Mat4x4Translate(translateNear, 0, 0, clip[4]);
-	
-    // 5. scale such that view volume bounds are ([-1,1], [-1,1], [-1,0]
-	var sx = 2 / (clip[1] - clip[0]);
-	var sy = 2 / (clip[3] - clip[2]);
-	var sz = 1 / (clip_val.far - clip_val.near);
-	Mat4x4Scale(scale, sx, sy, sz);
-    // ...
-    var transform = Matrix.multiply([scale, translateNear, shear, rotate, translate]);
+    let t_clip = new Matrix(4,4);
+    t_clip.values = [
+        [1,0,0,0],
+        [0,1,0,0],
+        [0,0,1,clip_val.near],
+        [0,0,0,1]
+    ];
+
+    // 5. scale such that view volume bounds are ([-1,1], [-1,1], [-1,0])
+    let s_par = new Matrix(4,4);
+    Mat4x4Scale(s_par,
+        2/(clip_val.right - clip_val.left),
+        2/(clip_val.top - clip_val.bottom),
+        1/clip_val.far
+    );
+
+    var transform = Matrix.multiply([s_par,t_clip,sh_par,r_par,t_par]);
     mat4x4.values = transform.values;
 }
 
@@ -66,8 +73,6 @@ function Mat4x4Projection(mat4x4, prp, srp, vup, clip) {
     let cw = new Vector3((clip_val.left+clip_val.right)/2, (clip_val.top+clip_val.bottom)/2, -clip_val.near);
 
     let dop = cw;
-
-    //VR PRP = cw - origin
 
     let n_axis = prp.subtract(srp);
     n_axis.normalize();
@@ -92,7 +97,6 @@ function Mat4x4Projection(mat4x4, prp, srp, vup, clip) {
     // 3. shear such that CW is on the z-axis
     let sh_per = new Matrix(4,4);
     Mat4x4ShearXY(sh_per, (-dop.x)/dop.z, (-dop.y)/dop.z);
-    //Mat4x4Identity(sh_per);
 
     // 4. scale such that view volume bounds are ([z,-z], [z,-z], [-1,zmin])
     let s_per = new Matrix(4,4);
