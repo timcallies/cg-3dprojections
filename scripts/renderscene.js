@@ -426,31 +426,9 @@ function DrawScene() {
     }
 
     //Clip
-    /*for (var i = 0; i < scene.models.length; i++)
-    {
-        for (var j = 0; j < scene.models[i].edges.length; j++)
-        {
-            for (var k = 0; k < scene.models[i].edges[j].length - 1; k++)
-            {
-				var v1 = scene.models[i].vertices[scene.models[i].edges[j][k]];
-				var v2 = scene.models[i].vertices[scene.models[i].edges[j][k + 1]];
-				var line;
-				if(scene.view.type === 'parallel')
-				{
-					line = clipPar(v1,v2);
-				}
-				else
-				{
-					line = clipPersp(v1, v2);
-				}
-				if (line != null)
-				{
-					scene.models[i].vertices[k] = line.pt0;
-					scene.models[i].vertices[k+1] = line.pt1;
-				}
-			}
-		}
-	}*/
+    for(let model of models) {
+        //clip_model(model);
+    }
 
     //Transform
     let project_back = new Matrix(4,4);
@@ -487,186 +465,110 @@ function DrawScene() {
     }
 }
 
-function OutcodePar(pt)
-{
-	var outcode = 0;
-	if (pt.x - 0.00001 < -1) outcode += LEFT;
-	else if (pt.x - 0.00001 > 1) outcode += RIGHT;
-	if (pt.y - 0.00001 < -1) outcode += BOTTOM;
-	else if (pt.y - 0.00001 > 1) outcode += TOP;
-	if (pt.z > 0) outcode += NEAR;
-	else if (pt.z < -1) outcode += FAR;
-	
-	return outcode;
+function clip_model(model) {
+
+    let clipped_edges = []
+
+    // Clip each edge/polygon
+    for(let edge of model.edges) {
+        for(i=1; i<edge.length; i++) {
+            let idx_0 = edge[i-1];
+            let idx_1 = edge[i];
+
+            let keep_looping = true;
+            while(keep_looping) {
+                
+                let pt_0 = model.vertices[idx_0].values;
+
+                pt_0 = new Vector4(pt_0[0][0], pt_0[1][0], pt_0[2][0], pt_0[3][0]);
+                let pt_1 = model.vertices[idx_1].values;
+                pt_1 = new Vector4(pt_1[0][0], pt_1[1][0], pt_1[2][0], pt_1[3][0]);
+
+                let outcode_0 = get_outcode(pt_0, pt_0.z, -pt_0.z, pt_0.z, -pt_0.z, -1, -1);
+                let outcode_1 = get_outcode(pt_1, pt_1.z, -pt_1.z, pt_1.z, -pt_1.z, -1, -1);
+
+                // Trivial accept
+                if((outcode_0 | outcode_1) == 0) {
+                    clipped_edges.push([idx_0, idx_1]);
+                    keep_looping = false;
+                    
+                }
+
+                // Trivial reject
+                else if((outcode_0 & outcode_1) != 0) {
+                    keep_looping = false;
+                }
+                
+                // Investigate further
+                else {
+                    //keep_looping = false;
+                    
+                    let this_idx = 0;
+                    let this_pt_0 = pt_0;
+                    let this_pt_1 = pt_1;
+                    let this_outcode = outcode_0;
+
+                    if(outcode_0== 0) {
+                        this_idx = 1;
+                        this_pt_0 = pt_1;
+                        this_pt_1 = pt_0;
+                        this_outcode = outcode_1;
+                    }
+
+                    let not_clipped = true;
+                    for(let outcode of [LEFT,RIGHT,BOTTOM,NEAR,FAR]) {
+                        if(not_clipped) {
+
+                            if((this_outcode & outcode) != 0) {
+                                let t = 0;
+                                let dx = this_pt_1.x - this_pt_0.x;
+                                let dy = this_pt_1.y - this_pt_0.y;
+                                let dz = this_pt_1.z - this_pt_0.z;
+
+                                if(outcode == LEFT)
+                                    t = (-this_pt_1.x + this_pt_1.z) / (dx - dz);
+                                if(outcode == RIGHT)
+                                    t = (this_pt_1.x + this_pt_1.z) / (-dx - dz);
+                                if(outcode == BOTTOM)
+                                    t = (-this_pt_1.y + this_pt_1.z) / (dy - dz);
+                                if(outcode == TOP)
+                                    t = (this_pt_1.y + this_pt_1.z) / (-dy - dz);
+
+                                console.log(JSON.stringify(new Vector4(this_pt_0.x+t*dx, this_pt_0.y+t*dy, this_pt_0.z+t*dz, this_pt_0.w)));
+                                model.vertices.push(new Vector4(this_pt_0.x+t*dx, this_pt_0.y+t*dy, this_pt_0.z+t*dz, this_pt_0.w));
+                                if(this_idx == 0) {
+                                    idx_0 = model.vertices.length-1;
+                                }
+                                else {
+                                    idx_1 = model.vertices.length-1;
+                                }
+                                clipped_edges.push([idx_0, idx_1]);
+                                keep_looping=false;
+                                not_clipped = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    model.edges = clipped_edges;
 }
 
-function OutcodePersp(pt)
-{
-	var outcode = 0;
-	var zmin = -scene.view.clip[4]/scene.view.clip[5];
-	if(pt.x < pt.z) outcode += LEFT;
-	else if(pt.x > -pt.z) outcode += RIGHT;
-	if(pt.y < pt.z) outcode += BOTTOM;
-	else if(pt.y > -pt.z) outcode += TOP;
-	if(pt.z > zmin) outcode += NEAR;
-	else if(pt.z < -1) outcode += FAR;
-	
-	return outcode;
+function get_outcode(vertex, left, right, bottom, top, near, far) {
+    let outcode = 0;
+    
+    if (vertex.x < left) outcode += LEFT;
+    if (vertex.x > right) outcode += RIGHT;
+    if (vertex.y < bottom) outcode += BOTTOM;
+    if (vertex.y > top) outcode += TOP;
+    //if (vertex.z < near) outcode += NEAR;
+    //if (vertex.z > far) outcode += FAR;
+    return outcode;
 }
 
-function clipPar(pt0, pt1)
-{
-	var done = false;
-	var line = null;
-	var endpt0 = new Vector4(pt0.x, pt0.y, pt0.z, pt0.w);
-	var endpt1 = new Vector4(pt1.x, pt1.y, pt1.z, pt1.w);
-	var outcode0, outcode1, selected_outcode, t;
-	
-	while(!done)
-	{
-		outcode0 = OutcodePar(endpt0);
-		outcode1 = OutcodePar(endpt1);
-		if((outcode0 | outcode1) === 0) // <---checks type and value
-		{
-			done = true;
-			line = {pt0 : endpt0, pt1 : endpt1};
-		}
-		else if((outcode0 & outcode1) !== 0)
-		{
-			done = true;
-		}
-		else
-		{
-			if(outcode0 !== 0)
-			{
-				selected_outcode = outcode0;
-			}
-			else
-			{
-				selected_outcode = outcode1;
-			}
-			
-			if (selected_outcode & LEFT)
-			{
-				t = (-1 - endpt0.x) / (endpt1.x - endpt0.x);
-			}
-			else if (selected_outcode & RIGHT)
-			{
-				t = (1 - endpt0.x) / (endpt1.x - endpt0.x);
-			}	
-			else if (selected_outcode & BOTTOM)
-			{
-				t = (-1 - endpt0.y) / (endpt1.y - endpt0.y);
-			}	
-			else if (selected_outcode & TOP)
-			{
-				t = (1 - endpt0.y) / (endpt1.y - endpt0.y);
-			}
-			else if (selected_outcode & NEAR)
-			{
-				t = (0 - endpt0.z) / (endpt1.z - endpt0.z);
-			}
-			else
-			{
-				t = (-1 - endpt0.z) / (endpt1.z - endpt0.z);
-			}
-			
-			if(selected_outcode === outcode0)
-			{
-				endpt0.x = endpt0.x + t * (endpt1.x - endpt0.x);
-				endpt0.y = endpt0.y + t * (endpt1.y - endpt0.y);
-				endpt0.z = endpt0.z + t * (endpt1.z - endpt0.z);
-			}
-			else
-			{
-				endpt1.x = endpt0.x + t * (endpt1.x - endpt0.x);
-				endpt1.y = endpt0.y + t * (endpt1.y - endpt0.y);
-				endpt1.z = endpt0.z + t * (endpt1.z - endpt0.z);
-			}
-		}
-	}
-	
-	return line;
-}
 
-function clipPersp(pt0, pt1)
-{
-	var done = false;
-	var line = null;
-	var endpt0 = new Vector4(pt0.x, pt0.y, pt0.z, pt0.w);
-	var endpt1 = new Vector4(pt1.x, pt1.y, pt1.z, pt1.w);
-	var outcode0, outcode1, selected_outcode, t;
-	
-	while(!done)
-	{
-		outcode0 = OutcodePersp(endpt0);
-		outcode1 = OutcodePersp(endpt1);
-		if((outcode0 | outcode1) === 0) // <---checks type and value
-		{
-			done = true;
-			line = {pt0 : endpt0, pt1 : endpt1};
-		}
-		else if((outcode0 & outcode1) !== 0)
-		{
-			done = true;
-		}
-		else
-		{
-			if(outcode0 !== 0)
-			{
-				selected_outcode = outcode0;
-			}
-			else
-			{
-				selected_outcode = outcode1;
-			}
-			
-			var dx = endpt1.x - endpt0.x;
-			var dy = endpt1.y - endpt0.y;
-			var dz = endpt1.z - endpt0.z;
-			var zmin = -scene.view.clip[4]/scene.view.clip[5];
-			if (selected_outcode & LEFT)
-			{
-				t = ((-endpt0.x) - endpt0.z) / (dx - dz);
-			}
-			else if (selected_outcode & RIGHT)
-			{
-				t = (endpt0.x - endpt0.z) / (-dx - dz);
-			}	
-			else if (selected_outcode & BOTTOM)
-			{
-				t = ((-endpt0.y) + endpt0.z) / (dy - dz);
-			}	
-			else if (selected_outcode & TOP)
-			{
-				t = (endpt0.y + endpt0.z) / (-dy - dz);
-			}
-			else if (selected_outcode & NEAR)
-			{
-				t = (endpt0.z - zmin) / (-dz);
-			}
-			else
-			{
-				t = ((-endpt0.z) - 1) / (dz);
-			}
-			
-			if(selected_outcode === outcode0)
-			{
-				endpt0.x = endpt0.x + t * (endpt1.x - endpt0.x);
-				endpt0.y = endpt0.y + t * (endpt1.y - endpt0.y);
-				endpt0.z = endpt0.z + t * (endpt1.z - endpt0.z);
-			}
-			else
-			{
-				endpt1.x = endpt0.x + t * (endpt1.x - endpt0.x);
-				endpt1.y = endpt0.y + t * (endpt1.y - endpt0.y);
-				endpt1.z = endpt0.z + t * (endpt1.z - endpt0.z);
-			}
-		}
-	}
-	
-	return line;
-}
 
 // Called when user selects a new scene JSON file
 function LoadNewScene() {
